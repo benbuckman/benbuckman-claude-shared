@@ -12,6 +12,7 @@ Everything here is deliberately **free of employer, project, and machine specifi
 
 | Path | Loaded |
 |---|---|
+| `AGENTS.md` | by agents that look for that name; it points at `CLAUDE.md` |
 | `claude--voice.md` | always |
 | `claude--workflow-preferences.md` | always |
 | `claude--working-with-code.md` | on demand |
