@@ -69,6 +69,8 @@ Block-level `<!-- -->` comments are stripped from CLAUDE.md files before they re
 
 This repo is public and deliberately carries none: no names, email addresses, employers, locations, account handles, or machine identifiers, in the content or in the examples. Identity and environment belong in the private `CLAUDE.md` that imports this one, where they are also more useful — that file can say what is true of a particular person, machine, and job.
 
+The one exception is the copyright line in [LICENSE-CODE](LICENSE-CODE), which names the author because an MIT license needs a copyright holder.
+
 ## Why a separate repo
 
 Personal dotfiles carry machine paths, employer tooling, and private preferences. Prising the genuinely general guidance out into its own public repo means one canonical copy, shareable, with the private layers importing it rather than duplicating it.
