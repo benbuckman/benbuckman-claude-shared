@@ -49,6 +49,7 @@ Prefer `~/.claude/CLAUDE.md` over `~/CLAUDE.md` in your home directory. The form
 
 | Skill | What it does |
 |---|---|
+| [`new-tmux-agent`](skills/new-tmux-agent) | Starts an independent Claude Code session in a pane next to this one, in tmux or cmux, from a prompt file, optionally set to work in a worktree. |
 | [`persist-memories`](skills/persist-memories) | Reviews Claude Code's auto memories one at a time, and promotes the ones worth keeping into a personal, shared, or project instruction file. Run it as `/persist-memories`. |
 | [`recap-last`](skills/recap-last) | Recaps the last N turns of a session, one sentence each, then the session's topic, goal, and next step. |
 | [`review-branch-status`](skills/review-branch-status) | Reports a branch's PR, remote, commits, and whether its changes already reached the default branch. |
