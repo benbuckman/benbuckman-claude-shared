@@ -51,6 +51,8 @@ Prefer `~/.claude/CLAUDE.md` over `~/CLAUDE.md` in your home directory. The form
 |---|---|
 | [`recap-last`](skills/recap-last) | Recaps the last N turns of a session, one sentence each, then the session's topic, goal, and next step. |
 | [`review-branch-status`](skills/review-branch-status) | Reports a branch's PR, remote, commits, and whether its changes already reached the default branch. |
+| [`dump-slack-threads`](skills/dump-slack-threads) | Copies a Slack conversation word for word into a Markdown file, with each thread's replies nested under its parent. Uses the Slack connector. |
+| [`track-slack-thread`](skills/track-slack-thread) | Keeps that copy current in a file on a local git branch, committing only when the conversation changed, optionally on a schedule. Builds on `dump-slack-threads`. |
 | [`sitrep`](skills/sitrep) | Prints a situation report: time, git state, PR, branch stack, tasks, and sub-agents. Run it as `/sitrep`. |
 
 To install one, link its directory into your user skills directory:
