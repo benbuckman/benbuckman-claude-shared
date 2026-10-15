@@ -49,6 +49,7 @@ Prefer `~/.claude/CLAUDE.md` over `~/CLAUDE.md` in your home directory. The form
 
 | Skill | What it does |
 |---|---|
+| [`persist-memories`](skills/persist-memories) | Reviews Claude Code's auto memories one at a time, and promotes the ones worth keeping into a personal, shared, or project instruction file. Run it as `/persist-memories`. |
 | [`recap-last`](skills/recap-last) | Recaps the last N turns of a session, one sentence each, then the session's topic, goal, and next step. |
 | [`review-branch-status`](skills/review-branch-status) | Reports a branch's PR, remote, commits, and whether its changes already reached the default branch. |
 | [`export-md`](skills/export-md) | Exports the current conversation to Markdown or Slack-formatted text, from its transcript. Run it as `/export-md`. Its parser has a smoke test for Claude Code format changes. |
