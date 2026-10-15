@@ -18,7 +18,7 @@ Everything here is deliberately **free of employer, project, and machine specifi
 | `claude--working-with-code.md` | on demand |
 | `claude--working-with-git.md` | on demand |
 | `claude--working-with-tmux.md` | on demand |
-| `skills/` | per Claude Code's skill discovery |
+| `skills/` | per Claude Code's skill discovery, once installed. See "Skills" below. |
 
 ## Always-loaded vs on-demand
 
@@ -45,6 +45,22 @@ Two limits worth knowing:
 
 Prefer `~/.claude/CLAUDE.md` over `~/CLAUDE.md` in your home directory. The former is a documented user-scope location whose imports load without an approval prompt, regardless of your working directory. The latter is picked up only because Claude Code walks up the directory tree, which makes it conditional on where you started.
 
+## Skills
+
+| Skill | What it does |
+|---|---|
+| [`recap-last`](skills/recap-last) | Recaps the last N turns of a session, one sentence each, then the session's topic, goal, and next step. |
+| [`review-branch-status`](skills/review-branch-status) | Reports a branch's PR, remote, commits, and whether its changes already reached the default branch. |
+| [`sitrep`](skills/sitrep) | Prints a situation report: time, git state, PR, branch stack, tasks, and sub-agents. Run it as `/sitrep`. |
+
+To install one, link its directory into your user skills directory:
+
+```bash
+ln -s ~/path/to/benbuckman-claude-shared/skills/<name> ~/.claude/skills/<name>
+```
+
+Use an absolute path for the link's target. A relative target is resolved from the directory the link sits in, which breaks if `~/.claude/skills` is itself a symlink. Skills that bundle a script refer to it through `${CLAUDE_SKILL_DIR}`, so they work from any install location.
+
 ## A note on HTML comments
 
 Block-level `<!-- -->` comments are stripped from CLAUDE.md files before they reach Claude, and stay visible to anyone reading the file. Use them for notes to human maintainers — anything Claude cannot act on is otherwise paying rent in every session. This repo keeps its own explanation in this README for the same reason.
@@ -70,3 +86,7 @@ Something like this is plenty:
 Attribution can be given in any reasonable manner, so long as it doesn't imply I endorse you or what you built.
 
 `SPDX-License-Identifier: CC-BY-4.0`
+
+### Scripts
+
+The scripts bundled with skills, such as [`skills/sitrep/sitrep.sh`](skills/sitrep/sitrep.sh), are under the [MIT License](LICENSE-CODE) instead, because CC BY 4.0 isn't designed for software. Each script names its license in an `SPDX-License-Identifier: MIT` line. The prose in a skill's `SKILL.md` stays under CC BY 4.0.
