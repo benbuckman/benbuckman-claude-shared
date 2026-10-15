@@ -1,0 +1,565 @@
+#!/usr/bin/env bash
+# Print a github.com URL for a file, directory, or compare view.
+# Intended for embedding rich source links in PR descriptions, Linear
+# comments, Slack posts, etc.
+#
+# Similar in spirit to `gh browse -n`, but:
+#   - Much faster: ~10ms vs ~400ms (gh has heavy CLI startup overhead, and
+#     calls the GitHub API for default-branch resolution).
+#   - No auth required: `gh browse` refuses to run without `gh auth login`,
+#     even for purely-local URL construction.
+#   - Adds /tree/ and /compare/ modes; `gh browse` is /blob/ only.
+#   - Omits the `?plain=1` query param `gh browse` always appends to file URLs.
+#
+# SPDX-License-Identifier: MIT
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: gh-link [flags] <arg>
+
+Modes (set via --mode, default = blob):
+  blob     File link. <arg> = <path>[:LINESPEC | #LINESPEC]
+           LINESPEC accepts (bare digits or GitHub fragment form):
+             42                single line
+             42-50             line range
+             L42, L42C5        explicit form, optional column
+             L42C5-L42C20      partial line, column range
+             L42C5-L50C10      multi-line column range
+           Column-range syntax is undocumented by GitHub but works.
+  tree     Directory or repo-root link. <arg> = <path> (optional)
+  compare  Diff link. <arg> = <base>...<head>  (or <base>..<head>)
+  pr       PR-files diff anchor. <arg> = <path>[:LINESPEC]; --pr <num>
+           required. URL points at the per-file diff card in the PR's
+           /files view. Useful for "this PR changes this file" references —
+           stable forever (the PR archive outlives the branch).
+           LINESPEC for pr mode: bare digits default to R (right side);
+           use L for left side. Range: `R42-R50` or `L42-L50` (cross-side
+           ranges and column specs rejected).
+
+Flags:
+  --mode=<blob|tree|compare|pr>
+                          Link type. Default: blob.
+  --commit=<sha>          Pin link to a commit SHA. If neither --commit nor
+                          --branch is given, the ref is $GH_LINK_DEFAULT_REF
+                          if set, else the remote's default branch as the
+                          local clone records it (origin/HEAD), else HEAD,
+                          which GitHub resolves to the default branch.
+                          Not valid in compare or pr modes.
+  --branch=<name>         Pin link to a branch ref. Mutex with --commit.
+                          Not valid in compare or pr modes.
+  --pr=<num>              PR number, required by --mode=pr.
+  -R, --repo <owner/repo> Override target repo. Default: derived from
+                          local git remote `origin`.
+  -h, --help              Show this help.
+
+Exit codes:
+  0  ok
+  1  usage error
+  2  path not found
+  3  not in a git repo (when local context is required)
+EOF
+}
+
+err() { echo "gh-link: $*" >&2; }
+
+mode="blob"
+commit=""
+branch=""
+repo=""
+repo_from_origin=""
+input=""
+pr=""
+
+# Validate the value of a value-taking flag. Catches two failure shapes:
+#   - empty value in either equals or space form
+#   - flag-shaped token following a space-form flag (e.g. `--branch --commit=x`
+#     silently consuming `--commit=x` as the branch name).
+# For the rare legitimate case of a value that starts with `-`, the user can
+# use `--flag=-value` (equals form) — that path skips the flag-shaped check.
+# $1=flag name as the user wrote it, $2="equals"|"space", $3=candidate value.
+validate_flag_value() {
+  if [[ -z "$3" ]]; then
+    err "$1 requires a non-empty value"
+    exit 1
+  fi
+  if [[ "$2" == space && "$3" == -* ]]; then
+    err "$1 expected a value but next token looks like a flag: $3"
+    err "  (if this is intentional, use $1=$3)"
+    exit 1
+  fi
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --mode=*)
+      mode="${1#--mode=}"
+      validate_flag_value --mode equals "$mode"
+      shift
+      ;;
+    --mode)
+      mode="${2:-}"
+      validate_flag_value --mode space "$mode"
+      shift 2
+      ;;
+    --commit=*)
+      commit="${1#--commit=}"
+      validate_flag_value --commit equals "$commit"
+      shift
+      ;;
+    --commit)
+      commit="${2:-}"
+      validate_flag_value --commit space "$commit"
+      shift 2
+      ;;
+    --branch=*)
+      branch="${1#--branch=}"
+      validate_flag_value --branch equals "$branch"
+      shift
+      ;;
+    --branch)
+      branch="${2:-}"
+      validate_flag_value --branch space "$branch"
+      shift 2
+      ;;
+    --repo=*)
+      repo="${1#--repo=}"
+      validate_flag_value --repo equals "$repo"
+      shift
+      ;;
+    -R|--repo)
+      repo="${2:-}"
+      validate_flag_value "$1" space "$repo"
+      shift 2
+      ;;
+    --pr=*)
+      pr="${1#--pr=}"
+      validate_flag_value --pr equals "$pr"
+      shift
+      ;;
+    --pr)
+      pr="${2:-}"
+      validate_flag_value --pr space "$pr"
+      shift 2
+      ;;
+    -h|--help)  usage; exit 0 ;;
+    --)
+      shift
+      if [[ -z "$input" && $# -gt 0 ]]; then input="$1"; shift; fi
+      if [[ $# -gt 0 ]]; then err "unexpected extra argument: $1"; exit 1; fi
+      ;;
+    -*) err "unknown flag: $1"; usage >&2; exit 1 ;;
+    *)
+      if [[ -z "$input" ]]; then input="$1"; shift
+      else err "unexpected extra argument: $1"; exit 1; fi
+      ;;
+  esac
+done
+
+case "$mode" in
+  blob|tree|compare|pr) ;;
+  *) err "invalid --mode: $mode (must be blob, tree, compare, or pr)"; exit 1 ;;
+esac
+
+if [[ -n "$commit" && -n "$branch" ]]; then
+  err "--commit and --branch are mutually exclusive"; exit 1
+fi
+
+resolve_repo_from_origin() {
+  local origin_url
+  origin_url=$(git config --get remote.origin.url 2>/dev/null) || {
+    err "no remote 'origin' configured; pass -R owner/repo"
+    exit 1
+  }
+  # Strip every shape of GitHub origin URL we know. Order doesn't matter
+  # since each prefix anchors to the start of the string. Ports on ssh://
+  # URLs aren't supported — pass -R owner/repo to bypass derivation.
+  repo="$origin_url"
+  repo="${repo#ssh://git@github.com/}"
+  repo="${repo#git@github.com:}"
+  repo="${repo#https://github.com/}"
+  repo="${repo#http://github.com/}"
+  repo="${repo%.git}"
+  if [[ "$repo" != */* ]]; then
+    err "could not parse owner/repo from remote origin: $origin_url"
+    exit 1
+  fi
+  repo_from_origin=1
+}
+
+# The ref for a link when neither --commit nor --branch is given. The local
+# clone's origin/HEAD names the remote's default branch, but only says so
+# about this clone's own repo, so it is used only when the repo came from
+# origin. GitHub resolves `HEAD` to any repo's default branch, which makes
+# it the fallback. A fresh `git clone` sets origin/HEAD. A repo created
+# with `git init` and `git remote add` doesn't, until
+# `git remote set-head origin --auto`.
+default_ref() {
+  if [[ -n "${GH_LINK_DEFAULT_REF:-}" ]]; then
+    echo "$GH_LINK_DEFAULT_REF"
+    return
+  fi
+  local head
+  if [[ -n "$repo_from_origin" ]] \
+     && head=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null); then
+    echo "${head#origin/}"
+    return
+  fi
+  echo "HEAD"
+}
+
+# Compute the sha256 of a string (used by --mode=pr to derive the per-file
+# anchor in a PR's `/files` view — GitHub's anchor format is `diff-<sha256
+# of the repo-relative file path>`).
+sha256_path() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$1" | sha256sum | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then
+    printf '%s' "$1" | shasum -a 256 | cut -d' ' -f1
+  else
+    err "no sha256 tool available (need sha256sum or shasum)"
+    exit 1
+  fi
+}
+
+# Percent-encode a file path for use in a GitHub URL. Preserves `/` as a
+# path separator and the RFC 3986 unreserved set; encodes everything else
+# (most notably spaces). Without this, files like `docs/My File.md`
+# produce literal-space URLs that break markdown auto-linking even when
+# the browser address bar tolerates them.
+urlencode_path() {
+  local string="$1"
+  local LANG=C
+  local i len ch
+  len=${#string}
+  for ((i=0; i<len; i++)); do
+    ch="${string:i:1}"
+    case "$ch" in
+      [a-zA-Z0-9._~/-]) printf '%s' "$ch" ;;
+      *) printf '%%%02X' "'$ch" ;;
+    esac
+  done
+}
+
+# Normalize $path to a repo-relative form usable in a GitHub URL. Handles
+# the three input shapes uniformly across blob, tree, and pr modes:
+#
+#   absolute path — must be under the git toplevel; the prefix is stripped.
+#   cwd-relative  — exists at cwd; gets the cwd-to-toplevel prefix prepended.
+#   repo-root-relative — doesn't exist at cwd but exists under the toplevel;
+#                        left as-is.
+#
+# $1: "strict" | "lenient"
+#   strict:  errors if path doesn't exist anywhere (blob/tree need a real file).
+#   lenient: trusts the input as repo-relative if not found locally (pr mode —
+#            the user may be referencing a file in someone else's PR not
+#            present in their working tree).
+#
+# Reads/writes the script-scoped $path. May set $toplevel via get_toplevel.
+# Print an absolute path with every symlink in its directories resolved.
+# The last component is kept as given unless it is itself a directory, so a
+# path to a file that doesn't exist yet still resolves through its parent.
+physical_path() {
+  if [[ -d "$1" ]]; then
+    (cd "$1" 2>/dev/null && pwd -P) || echo "$1"
+  elif [[ -d "$(dirname "$1")" ]]; then
+    echo "$(cd "$(dirname "$1")" 2>/dev/null && pwd -P)/$(basename "$1")"
+  else
+    echo "$1"
+  fi
+}
+
+normalize_path_for_url() {
+  local strict="$1"
+
+  if [[ -z "$path" ]]; then return; fi
+
+  if [[ "$path" == /* ]]; then
+    get_toplevel
+    if [[ -z "$toplevel" ]]; then
+      err "absolute path needs a git repo to determine repo-relative form: $path"
+      exit 2
+    fi
+    # git reports the toplevel with symlinks resolved, and the path may not
+    # be: on macOS, /var/folders/... is /private/var/folders/..., and
+    # ~/.claude/skills is often a symlink into a dotfiles repo. Compare the
+    # physical forms when the literal ones don't match.
+    local candidate
+    for candidate in "$path" "$(physical_path "$path")"; do
+      if [[ "$candidate" == "$toplevel" ]]; then
+        path=""
+        return
+      elif [[ "$candidate" == "$toplevel"/* ]]; then
+        path="${candidate#"$toplevel"/}"
+        return
+      fi
+    done
+    err "absolute path not under the git toplevel ($toplevel): $path"
+    exit 2
+  fi
+
+  # Relative path. Need toplevel to choose between cwd-relative (prepend
+  # prefix) and repo-root-relative (leave as-is). Without a toplevel we
+  # can only trust the input — error or no-op depending on strictness.
+  get_toplevel
+  if [[ -z "$toplevel" ]]; then
+    if [[ "$strict" == strict ]]; then
+      err "not in a git repo (needed to resolve relative path: $path)"
+      exit 3
+    fi
+    return
+  fi
+
+  if [[ -e "$path" ]]; then
+    local prefix
+    prefix=$(git rev-parse --show-prefix 2>/dev/null || echo "")
+    path="${prefix}${path}"
+  elif [[ -e "$toplevel/$path" ]]; then
+    : # already repo-root-relative
+  else
+    if [[ "$strict" == strict ]]; then
+      err "path not found: $path"; exit 2
+    fi
+    # lenient: trust as repo-relative
+  fi
+}
+
+# Lazy single fetch of the local git toplevel. Returns "" if we're not in
+# a working tree; callers decide whether that's an error. We have to read
+# this in two different contexts (absolute-path normalization for the URL,
+# and the broader local-git-context check below), so we cache it here.
+toplevel=""
+get_toplevel() {
+  if [[ -z "${toplevel_fetched:-}" ]]; then
+    toplevel=$(git rev-parse --show-toplevel 2>/dev/null) || toplevel=""
+    toplevel_fetched=1
+    # A checkout marked `core.bare = true` fails --show-toplevel while `git log`
+    # and `git push` keep working, so the "not in a git repo" errors below look
+    # like a gh-link bug rather than a repo-config one. Name the real cause
+    # once, here, where every caller of get_toplevel passes through.
+    if [[ -z "$toplevel" && "$(git rev-parse --is-bare-repository 2>/dev/null || echo false)" == "true" ]]; then
+      err "this checkout has core.bare = true — that is why the repo looks absent."
+      err "  Fix:  git config core.bare false"
+    fi
+  fi
+}
+
+case "$mode" in
+  blob|tree)
+    if [[ "$mode" == blob && -z "$input" ]]; then
+      err "missing <path>"; usage >&2; exit 1
+    fi
+
+    # Split path[<sep>LINESPEC] on the rightmost separator IF the suffix
+    # looks like a line/column spec. LINESPEC is either:
+    #   - bare digits  (`42`, `42-50`) — shorthand we expand to `L42`-form
+    #   - GitHub fragment (`L42`, `L42C5`, `L42C5-L42C20`, `L42C5-L50C10`)
+    #     — passed through verbatim.
+    # Mixed forms like `L42-50` are rejected (input ambiguity not worth
+    # second-guessing).
+    path="$input"
+    line_spec=""
+    if [[ -n "$input" ]]; then
+      for sep in ':' '#'; do
+        if [[ "$input" == *"$sep"* ]]; then
+          candidate="${input##*"$sep"}"
+          if [[ "$candidate" =~ ^([0-9]+(-[0-9]+)?|L[0-9]+(C[0-9]+)?(-L[0-9]+(C[0-9]+)?)?)$ ]]; then
+            path="${input%"$sep"*}"
+            line_spec="$candidate"
+            break
+          fi
+        fi
+      done
+    fi
+
+    if [[ "$mode" == tree && -n "$line_spec" ]]; then
+      err "line specs don't apply in tree mode"; exit 1
+    fi
+
+    # Build the URL fragment. Bare digits get `L`-prefixed (required by
+    # GitHub's blob-view JS); explicit `L...` form passes through.
+    fragment=""
+    if [[ -n "$line_spec" ]]; then
+      if [[ "$line_spec" == L* ]]; then
+        fragment="#${line_spec}"
+      elif [[ "$line_spec" == *-* ]]; then
+        fragment="#L${line_spec%-*}-L${line_spec#*-}"
+      else
+        fragment="#L${line_spec}"
+      fi
+    fi
+
+    # Path normalization. Runs unconditionally for absolute paths — `-R`
+    # only affects which repo slug ends up in the URL, not what we do with
+    # the path. Without this strip, `gh-link /path/to/repo/bin/foo -R …`
+    # produces `…/blob/<ref>//path/to/repo/bin/foo` because the path
+    # keeps its absolute form. Works equally for the main checkout and
+    # worktrees — git's toplevel resolves to whichever working tree contains
+    # cwd. The relative-path branch of the helper is a no-op here, because
+    # it only kicks in when local-git mode runs below.
+    if [[ -n "$path" && "$path" == /* ]]; then
+      normalize_path_for_url strict
+    fi
+
+    # The remaining local-git work (relative-path verification + repo
+    # derivation from `origin`) is skipped when the user gave us both -R
+    # AND an explicit ref — they've told us everything we need.
+    need_local_git=true
+    if [[ -n "$repo" && ( -n "$commit" || -n "$branch" ) ]]; then
+      need_local_git=false
+    fi
+
+    if $need_local_git; then
+      get_toplevel
+      if [[ -z "$toplevel" ]]; then
+        err "not in a git repo (and -R + --commit/--branch were not both passed)"
+        exit 3
+      fi
+
+      if [[ -n "$path" && "$path" != /* ]]; then
+        normalize_path_for_url strict
+      fi
+
+      [[ -z "$repo" ]] && resolve_repo_from_origin
+
+      if [[ -n "$commit" ]]; then
+        ref="$commit"
+      elif [[ -n "$branch" ]]; then
+        ref="$branch"
+      else
+        ref="$(default_ref)"
+      fi
+    else
+      ref="${commit:-$branch}"
+    fi
+
+    if [[ -z "$path" ]]; then
+      echo "https://github.com/${repo}/${mode}/${ref}"
+    else
+      # When a line/column fragment is present, append `?plain=1`. Required
+      # for rendered file types (.md, .ipynb, .svg, .csv) — GitHub serves
+      # those as rendered HTML by default, which has no line numbers to
+      # anchor to. Harmless for source files (.ts, .sh, .py) where the
+      # default view already shows line numbers.
+      query=""
+      if [[ -n "$fragment" ]]; then
+        query="?plain=1"
+      fi
+      echo "https://github.com/${repo}/${mode}/${ref}/$(urlencode_path "$path")${query}${fragment}"
+    fi
+    ;;
+
+  compare)
+    if [[ -z "$input" ]]; then
+      err "compare mode requires <base>...<head>"; exit 1
+    fi
+    if [[ -n "$commit" || -n "$branch" ]]; then
+      err "--commit/--branch don't apply in compare mode (refs go in <base>...<head>)"
+      exit 1
+    fi
+    if [[ "$input" != *..* ]]; then
+      err "compare mode expects <base>...<head> (or <base>..<head>); got: $input"
+      exit 1
+    fi
+
+    if [[ -z "$repo" ]]; then
+      get_toplevel
+      if [[ -z "$toplevel" ]]; then
+        err "not in a git repo (and -R was not passed)"
+        exit 3
+      fi
+      resolve_repo_from_origin
+    fi
+
+    echo "https://github.com/${repo}/compare/${input}"
+    ;;
+
+  pr)
+    # GitHub PR-files diff anchor. URL shape:
+    #   https://github.com/<repo>/pull/<num>/files#diff-<sha256(path)>
+    # The hash is sha256 of the repo-relative file path. Stable across PR
+    # updates and post-merge (the PR's /files archive lives forever); only
+    # changes if the file is renamed.
+    if [[ -z "$input" ]]; then
+      err "pr mode requires <path>"; exit 1
+    fi
+    if [[ -z "$pr" ]]; then
+      err "pr mode requires --pr <num>"; exit 1
+    fi
+    if [[ ! "$pr" =~ ^[1-9][0-9]*$ ]]; then
+      err "--pr must be a positive integer (no leading zeros); got: $pr"
+      exit 1
+    fi
+    if [[ -n "$commit" || -n "$branch" ]]; then
+      err "--commit/--branch don't apply in pr mode (the PR is the ref)"
+      exit 1
+    fi
+
+    # Parse an optional line spec. GitHub's PR diff view uses `R<n>` for
+    # right-side (new/current) lines and `L<n>` for left-side (old/deleted)
+    # lines, appended directly to the diff anchor: `#diff-<hash>R42` or
+    # `#diff-<hash>L42-L50`. Accepted input shapes (either `:` or `#` as
+    # the path/line separator — matches blob mode):
+    #   path:N      / path#N      → R<N>         (bare digits default to right side)
+    #   path:N-M    / path#N-M    → R<N>-R<M>
+    #   path:RN     / path#LN     → side preserved
+    #   path:RN-RM  / path#LN-LM  → range, same side both ends
+    # Rejected: cross-side ranges (`L42-R50`) and column specs (`C<n>` —
+    # the PR diff view is line-level only).
+    path="$input"
+    pr_line_suffix=""
+    for sep in ':' '#'; do
+      if [[ "$input" != *"$sep"* ]]; then continue; fi
+      candidate="${input##*"$sep"}"
+      if [[ "$candidate" =~ ^[RL]?[0-9]+(-[RL]?[0-9]+)?$ ]]; then
+        path="${input%"$sep"*}"
+        if [[ "$candidate" == *-* ]]; then
+          left="${candidate%-*}"
+          right="${candidate#*-}"
+          left_side="${left%%[0-9]*}"
+          right_side="${right%%[0-9]*}"
+          [[ -z "$left_side"  ]] && left_side="R"
+          [[ -z "$right_side" ]] && right_side="R"
+          if [[ "$left_side" != "$right_side" ]]; then
+            err "pr mode: cross-side ranges (${left_side}…-${right_side}…) aren't supported; both endpoints must be on the same side (R or L)"
+            exit 1
+          fi
+          pr_line_suffix="${left_side}${left#[RL]}-${right_side}${right#[RL]}"
+        else
+          side="${candidate%%[0-9]*}"
+          [[ -z "$side" ]] && side="R"
+          pr_line_suffix="${side}${candidate#[RL]}"
+        fi
+        break
+      elif [[ "$candidate" =~ ^[RL]?[0-9]+C[0-9]+ ]]; then
+        err "pr mode doesn't support column specs (the PR diff view is line-level only)"
+        exit 1
+      fi
+    done
+
+    # Path normalization (lenient — the file may live in someone else's PR
+    # that isn't checked out locally, so don't error on path-not-found).
+    # Handles absolute paths AND cwd-relative paths AND repo-root-relative
+    # paths in one call. Runs unconditionally — `-R` doesn't change what
+    # the user's input path means relative to their cwd; it only controls
+    # which repo slug ends up in the URL.
+    normalize_path_for_url lenient
+
+    # Resolve repo from origin if -R wasn't given.
+    if [[ -z "$repo" ]]; then
+      get_toplevel
+      if [[ -z "$toplevel" ]]; then
+        err "not in a git repo (and -R was not passed)"
+        exit 3
+      fi
+      resolve_repo_from_origin
+    fi
+
+    if [[ -z "$path" ]]; then
+      err "pr mode requires a non-empty path"; exit 1
+    fi
+
+    echo "https://github.com/${repo}/pull/${pr}/files#diff-$(sha256_path "$path")${pr_line_suffix}"
+    ;;
+esac
