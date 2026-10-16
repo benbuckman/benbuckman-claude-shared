@@ -3,7 +3,7 @@ name: export-md
 description: Export the current conversation to a Markdown file, or to Slack-formatted text
 argument-hint: "[output path] [N turns, or all] [blockquote] [slack]"
 disable-model-invocation: true
-allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/scripts/claude-to-md.mjs *), Bash(ls *), Bash(grep *)
+allowed-tools: Bash(python3 -I ${CLAUDE_SKILL_DIR}/scripts/claude-to-md.py *), Bash(ls *), Bash(grep *)
 ---
 
 Export this conversation to a well-formatted Markdown file.
@@ -52,7 +52,7 @@ The giveaway if you pick the wrong transcript: `--last N` output that doesn't gr
 ### Step 2: Run the export script
 
 ```bash
-node "${CLAUDE_SKILL_DIR}/scripts/claude-to-md.mjs" <jsonl-file> --last <N> --exclude-last-turn [--blockquote] [--slack] > <output-path>
+python3 -I "${CLAUDE_SKILL_DIR}/scripts/claude-to-md.py" <jsonl-file> --last <N> --exclude-last-turn [--blockquote] [--slack] > <output-path>
 ```
 
 - Always pass `--exclude-last-turn`. By the time you run this, the `/export-md` request is already the final turn in the JSONL, so without the flag the export would include the user asking for the export. With it, `--last N` means the N turns *before* the export request.
@@ -73,4 +73,4 @@ If Slack format was used, also remind: "Paste into Slack with **Ctrl+Shift+V** (
 - Tool calls are left out unless the script is passed `--tool-calls yes`, which renders them as blockquotes. `thinking` blocks and system noise, including subagent completion notices, are always stripped.
 - `--last N` controls how many back-and-forths to include, and `--last 0` includes all of them. `--around <text>` instead shows the turns that mention the text, with `--context N` neighbors on each side.
 - `--exclude-last-turn` is only correct when a session exports *itself*. A caller rendering a finished or past session, such as the `find-past-conversations` skill, must omit it, because that session's final turn is real content.
-- The transcript format is internal to Claude Code and changes between versions. After a Claude Code update, run `node --test "${CLAUDE_SKILL_DIR}/tests/claude-to-md.test.mjs"`. Its live check renders the newest transcript on this machine.
+- The transcript format is internal to Claude Code and changes between versions. After a Claude Code update, run `python3 -I -m unittest discover -s "${CLAUDE_SKILL_DIR}/tests"`. Its live check renders the newest transcript on this machine.

@@ -73,7 +73,7 @@ Use an absolute path for the link's target. A relative target is resolved from t
 Three skills bundle scripts with tests, which [`.github/workflows/tests.yml`](.github/workflows/tests.yml) runs on every push. To run them locally:
 
 ```bash
-node --test skills/export-md/tests/claude-to-md.test.mjs
+python3 -m unittest discover -s skills/export-md/tests
 python3 -m unittest discover -s skills/find-past-conversations/tests
 node --test skills/linking-to-code/tests/gh-link.test.ts   # Node 22.18 or later
 ```

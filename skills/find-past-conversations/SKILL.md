@@ -1,7 +1,7 @@
 ---
 name: find-past-conversations
 description: Search past Claude Code conversations by keyword. Use when the user says "find conversation", "search conversations", "which conversation", "did we discuss", "where did we talk about", "find where we discussed", or wants to locate a previous Claude Code session by topic or keyword.
-allowed-tools: Bash(grep *), Bash(python3 -I ${CLAUDE_SKILL_DIR}/scripts/list-claude-conversations.py*), Bash(node ${CLAUDE_SKILL_DIR}/../export-md/scripts/claude-to-md.mjs *)
+allowed-tools: Bash(grep *), Bash(python3 -I ${CLAUDE_SKILL_DIR}/scripts/list-claude-conversations.py*), Bash(python3 -I ${CLAUDE_SKILL_DIR}/../export-md/scripts/claude-to-md.py *)
 ---
 
 # Find past conversations
@@ -12,7 +12,7 @@ The `/resume` picker already filters sessions by title and first prompt, and `Ct
 
 It uses two scripts:
 - **`scripts/list-claude-conversations.py`** lists every session with its title, working directory, branch, PR, age, and the session it was forked from.
-- **`claude-to-md.mjs`**, from the [export-md](../export-md/SKILL.md) skill, renders a session's turns as Markdown. Install `export-md` next to this skill.
+- **`claude-to-md.py`**, from the [export-md](../export-md/SKILL.md) skill, renders a session's turns as Markdown. Install `export-md` next to this skill.
 
 ## Steps
 
@@ -46,7 +46,7 @@ The output is a JSON list, newest first. Match each file from step 2 on `path` t
 For the most promising matches, render only the turns around the keyword:
 
 ```bash
-node "${CLAUDE_SKILL_DIR}/../export-md/scripts/claude-to-md.mjs" <path> --around "<keyword>" --context 1
+python3 -I "${CLAUDE_SKILL_DIR}/../export-md/scripts/claude-to-md.py" <path> --around "<keyword>" --context 1
 ```
 
 Don't pass `--exclude-last-turn`: a past session's last turn is real content. If `export-md` isn't installed, fall back to `grep -n -i -F "<keyword>" <path>` and read a few lines around each hit.

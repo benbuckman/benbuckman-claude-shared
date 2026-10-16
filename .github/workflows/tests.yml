@@ -23,8 +23,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: export-md (claude-to-md.mjs)
-        run: node --test skills/export-md/tests/claude-to-md.test.mjs
+      - name: export-md (claude-to-md.py)
+        run: python3 -I -B -m unittest discover -s skills/export-md/tests -v
 
       - name: find-past-conversations (list-claude-conversations.py)
         run: python3 -I -B -m unittest discover -s skills/find-past-conversations/tests -v
