@@ -68,6 +68,18 @@ ln -s ~/path/to/benbuckman-claude-shared/skills/<name> ~/.claude/skills/<name>
 
 Use an absolute path for the link's target. A relative target is resolved from the directory the link sits in, which breaks if `~/.claude/skills` is itself a symlink. Skills that bundle a script refer to it through `${CLAUDE_SKILL_DIR}`, so they work from any install location.
 
+## Tests
+
+Three skills bundle scripts with tests, which [`.github/workflows/tests.yml`](.github/workflows/tests.yml) runs on every push. To run them locally:
+
+```bash
+node --test skills/export-md/tests/claude-to-md.test.mjs
+python3 -m unittest discover -s skills/find-past-conversations/tests
+node --test skills/linking-to-code/tests/gh-link.test.ts   # Node 22.18 or later
+```
+
+The first two include a live check that reads your own Claude Code transcripts, because the transcript format is internal to Claude Code and changes between versions. Run them after a Claude Code update. In CI they skip that check.
+
 ## A note on HTML comments
 
 Block-level `<!-- -->` comments are stripped from CLAUDE.md files before they reach Claude, and stay visible to anyone reading the file. Use them for notes to human maintainers — anything Claude cannot act on is otherwise paying rent in every session. This repo keeps its own explanation in this README for the same reason.
