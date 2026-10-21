@@ -35,5 +35,6 @@ referenced rather than imported, and cost nothing until opened.
   `./claude--working-with-code.md`
 - Git and GitHub — branching, rebasing, PRs, review comments:
   `./claude--working-with-git.md`
-- tmux — driving panes, messaging sibling Claude Code sessions:
+- tmux and cmux — driving panes, reading and messaging sibling Claude Code
+  sessions:
   `./claude--working-with-tmux.md`
