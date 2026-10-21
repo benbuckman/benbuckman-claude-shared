@@ -37,7 +37,7 @@ tmux send-keys -t '%24' Enter                # separate call, or it gets swallow
 
 ## cmux
 
-cmux is a terminal app with its own panes, separate from tmux. On the personal M4, Claude Code runs in cmux. A session is in cmux when `CMUX_SURFACE_ID` is set. The `cmux` command is on the `PATH`, at `/Applications/cmux.app/Contents/Resources/bin/cmux`.
+cmux is a terminal app with its own panes, separate from tmux. A session is in cmux when `CMUX_SURFACE_ID` is set. The `cmux` command is on the `PATH`, at `/Applications/cmux.app/Contents/Resources/bin/cmux`.
 
 In cmux, a window holds workspaces, a workspace holds panes, and a pane holds surfaces. A surface is one terminal tab. Each Claude Code session, and each shell the user opens, is its own surface. Commands that act on a terminal take a surface.
 
@@ -59,7 +59,7 @@ The output lists each surface with its ref, title, and terminal device:
 
 - `◀ here` marks this session's own surface.
 - A Claude Code surface carries its conversation topic as its title. A shell surface carries the command it's running, so the user can point at a pane by naming the command in it.
-- Run `cmux tree` again before each use of a ref. Whether refs stay the same across a cmux restart hasn't been checked. `--id-format uuids` prints UUIDs instead.
+- Run `cmux tree` again before each use of a ref. Every ref changes when cmux restarts. `--id-format uuids` prints UUIDs instead.
 
 ### Reading a surface
 
@@ -97,7 +97,31 @@ When cmux relaunches, it rebuilds each workspace and runs `claude --resume <sess
 - A restart stops work in progress inside each session: a running turn, background tasks, and scheduled wakeups. The conversation comes back, and the user asks it to continue.
 - A plain shell comes back as a new shell.
 
-This comes from cmux's [agent hooks doc](https://github.com/manaflow-ai/cmux/blob/main/docs/agent-hooks.md), read on 2026-10-21 with cmux 0.64.25 installed. It hadn't yet been checked against a real restart.
+This comes from cmux's [agent hooks doc](https://github.com/manaflow-ai/cmux/blob/main/docs/agent-hooks.md), read on 2026-10-21 with cmux 0.64.25 installed.
+
+#### Checking a restart with a snapshot
+
+[`scripts/cmux-snapshot.sh`](scripts/cmux-snapshot.sh) records every terminal surface before a restart, and compares that record with a second one taken afterward:
+
+```bash
+cmux-snapshot.sh ~/snapshots/cmux-before      # before the restart
+cmux-snapshot.sh ~/snapshots/cmux-after       # after it
+cmux-snapshot.sh compare ~/snapshots/cmux-before ~/snapshots/cmux-after
+```
+
+A snapshot holds each surface's workspace, ref, title, resume command, and visible screen. It also holds the processes that name the surface's Claude Code session ID, and the size and last-change time of the session's transcript. The comparison matches surfaces by session ID, because cmux renumbers every ref. For each session it shows whether the transcript grew, shrank, or went missing, whether a process names the session ID, and when the transcript last changed. Screens and titles can contain anything the sessions showed, so keep snapshots out of git.
+
+#### What a real restart did
+
+A restart on 2026-10-21, for the update from cmux 0.64.25 to 0.65.2, went like this:
+
+- **11 of 14 Claude Code sessions resumed.** The other 3 came back as plain shells in the right folder, with no Claude Code running. cmux still had the right resume command for each one. The user resumed two of them by hand with `claude -r`. `cmux surface resume show --surface <ref>` prints the full command.
+- **Find the sessions that didn't resume by transcript time, not by terminal device.** Every session writes to its transcript as cmux quits. A session that resumed writes again within seconds of the relaunch. A session resumed by hand with `claude -r` has no process that names its session ID, so its transcript time is the only sign.
+- **Every ref changed,** for example from `surface:86` to `surface:1000000006`. Match surfaces across a restart by title or session ID.
+- **`cmux tree` can report a stale `tty=` device for a surface,** such as the device it had before the restart, which now belongs to another surface. Don't find a surface's processes with `ps -t <tty>`. Search `ps` for the session ID instead.
+- **`CMUX_SOCKET_CAPABILITY` changed.** A restart replaces the socket token.
+- **cmux opened a new workspace with a browser tab of its pricing page** after the update.
+- **All 14 transcripts survived,** each the same size or larger.
 
 ### Don't print cmux's environment variables
 

@@ -18,6 +18,7 @@ Everything here is deliberately **free of employer, project, and machine specifi
 | `claude--working-with-code.md` | on demand |
 | `claude--working-with-git.md` | on demand |
 | `claude--working-with-tmux.md` | on demand |
+| `scripts/cmux-snapshot.sh` | not loaded; run by hand, as `claude--working-with-tmux.md` describes |
 | `skills/` | per Claude Code's skill discovery, once installed. See "Skills" below. |
 
 ## Always-loaded vs on-demand
