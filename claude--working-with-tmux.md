@@ -103,7 +103,7 @@ sleep 3
 cmux read-screen --workspace <ws> --surface <ref> --lines 15
 ```
 
-Whether this happens only when the recipient is busy, or only above some length, hasn't been tested.
+It isn't only when the recipient is busy. On 2026-10-23, an 18-line message to an idle session also needed the second `enter`. Whether it depends on length hasn't been tested.
 
 ### Restarting cmux
 
