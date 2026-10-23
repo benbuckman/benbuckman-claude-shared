@@ -31,3 +31,33 @@ jobs:
 
       - name: linking-to-code (gh-link)
         run: node --test skills/linking-to-code/tests/gh-link.test.ts
+
+  work-terms:
+    # Fails when a term the owner keeps out of this repo appears in its files
+    # or in the commits being pushed. The terms are in the PUBLIC_REPO_TERMS
+    # secret, an extended regular expression, so they aren't named here. GitHub
+    # masks a secret's value in logs. Without the secret, this job is skipped.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: No reserved terms in the files or the new commits
+        env:
+          TERMS: ${{ secrets.PUBLIC_REPO_TERMS }}
+          # The pushed-from commit on a push, and the base commit on a pull request.
+          BEFORE: ${{ github.event.before || github.event.pull_request.base.sha }}
+        run: |
+          if [ -z "$TERMS" ]; then echo "No PUBLIC_REPO_TERMS secret, so nothing to check."; exit 0; fi
+          found=0
+          if git grep -n -I -i -E "$TERMS" HEAD -- . > /tmp/hits; then
+            echo "::error::A reserved term is in the files:"; cut -d: -f2,3 /tmp/hits; found=1
+          fi
+          if [ -n "$BEFORE" ] && git cat-file -e "$BEFORE" 2>/dev/null; then range="$BEFORE..HEAD"; else range="HEAD"; fi
+          for c in $(git rev-list "$range"); do
+            if git show --format=%B --no-color "$c" | grep -q -i -E "$TERMS"; then
+              echo "::error::A reserved term is in commit $c, in its message or diff."; found=1
+            fi
+          done
+          exit $found
