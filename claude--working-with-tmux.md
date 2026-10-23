@@ -86,7 +86,24 @@ echo "$out"
 
 ### Sending to a surface
 
-The `new-tmux-agent` skill sends with `cmux send --surface <ref> "<text>"`, then `cmux send-key --surface <ref> enter`. Whether a long `cmux send` gets absorbed as a paste, as `tmux send-keys` does, hasn't been tested. Confirm delivery with `read-screen`, as with tmux.
+The `new-tmux-agent` skill sends with `cmux send --surface <ref> "<text>"`, then `cmux send-key --surface <ref> enter`.
+
+**A long `cmux send` can be absorbed as a paste, and the first `enter` may not submit it.** On 2026-10-21, a 30-line message sent with `cmux send`, followed by one `cmux send-key ... enter`, landed in the recipient's input box unsent. Claude Code showed it collapsed, with the hint `paste again to expand`. A second `cmux send-key ... enter` submitted it. The recipient was in the middle of a turn, so the submitted message was queued for that turn.
+
+So after sending:
+
+1. Read the screen with `read-screen`.
+2. If the message is still in the input box below the `❯` prompt, send `enter` again.
+3. Read the screen again. A submitted message appears above the input box, and the input box is empty.
+
+```bash
+cmux send --workspace <ws> --surface <ref> "$(cat message.md)"
+cmux send-key --workspace <ws> --surface <ref> enter
+sleep 3
+cmux read-screen --workspace <ws> --surface <ref> --lines 15
+```
+
+Whether this happens only when the recipient is busy, or only above some length, hasn't been tested.
 
 ### Restarting cmux
 
