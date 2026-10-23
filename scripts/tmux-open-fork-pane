@@ -4,7 +4,7 @@
 Works in tmux and in cmux. Runs as a SessionStart hook:
 
     "hooks": {"SessionStart": [{"hooks": [{"type": "command",
-        "command": "f=\"$HOME/dev/claude-shared/scripts/tmux-open-fork-pane\"; [ -x \"$f\" ] && exec \"$f\"; exit 0"}]}]}
+        "command": "f=\"$HOME/path/to/benbuckman-claude-shared/scripts/tmux-open-fork-pane\"; [ -x \"$f\" ] && exec \"$f\"; exit 0"}]}]}
 
 A fork started with /fork runs as a background session under the Claude daemon,
 so this hook runs inside the fork with no TMUX, TMUX_PANE, or CMUX_SURFACE_ID, and
