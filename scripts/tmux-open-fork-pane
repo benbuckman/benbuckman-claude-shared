@@ -1,0 +1,261 @@
+#!/usr/bin/env python3
+"""Open a Claude Code fork in a pane to the right of the pane that ran /fork.
+
+Works in tmux and in cmux. Runs as a SessionStart hook:
+
+    "hooks": {"SessionStart": [{"hooks": [{"type": "command",
+        "command": "f=\"$HOME/dev/claude-shared/scripts/tmux-open-fork-pane\"; [ -x \"$f\" ] && exec \"$f\"; exit 0"}]}]}
+
+A fork started with /fork runs as a background session under the Claude daemon,
+so this hook runs inside the fork with no TMUX, TMUX_PANE, or CMUX_SURFACE_ID, and
+its input names no parent session. The pane that ran /fork is found from what is
+on screen instead: right after /fork, that pane shows
+"session running · <name> · <first 8 chars of the fork's session id>", which ends
+the line in Claude Code 2.1.305. Claude Code panes use the terminal's alternate
+screen, which keeps no scrollback, so only the visible screen can be read, and
+only for a short while.
+
+If no pane shows that line, the fork's name ("<parent name> ⑂ <prompt>") is
+matched against pane titles, which Claude Code sets to the session name. The
+hook's input leaves session_title empty for a fork, so the name is read from the
+fork's entry in ~/.claude/sessions/ instead. If neither finds exactly one pane,
+nothing opens: the reason goes to the log, and the user sees a message with the
+command that opens the fork, on every tmux client's status line and as a cmux
+notification. /branch also starts a session with source "fork". It shows no such
+line, and its name has no ⑂, so it is logged and skipped without a message.
+
+In cmux, a pane is a surface. `cmux` reaches the app over its default socket,
+which needs none of cmux's environment variables. Checked with Claude Code
+2.1.309: `cmux tree` and `cmux read-screen` worked from an empty environment.
+
+The hook returns at once. The search runs in a detached child, because the fork
+may run this hook before the parent pane has drawn the line.
+
+SPDX-License-Identifier: MIT
+"""
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from datetime import datetime
+
+LOG = os.path.expanduser("~/.cache/tmux-open-fork-pane.log")
+SESSIONS = os.path.expanduser("~/.claude/sessions")
+WAIT_SECONDS = 10
+POLL_SECONDS = 0.5
+MESSAGE_MS = 15000
+CMUX_APP_CLI = "/Applications/cmux.app/Contents/Resources/bin/cmux"
+
+
+def log(msg):
+    os.makedirs(os.path.dirname(LOG), exist_ok=True)
+    with open(LOG, "a") as f:
+        f.write(f"{datetime.now().isoformat(timespec='seconds')} {msg}\n")
+
+
+def run(*args):
+    return subprocess.run(list(args), capture_output=True, text=True)
+
+
+def tmux(*args):
+    return run("tmux", *args)
+
+
+def cmux_bin():
+    """The cmux CLI, or None. A hook may not have cmux's bin directory on PATH."""
+    found = shutil.which("cmux")
+    if found:
+        return found
+    return CMUX_APP_CLI if os.access(CMUX_APP_CLI, os.X_OK) else None
+
+
+def cmux(*args):
+    return run(cmux_bin(), *args)
+
+
+def tmux_up():
+    return shutil.which("tmux") is not None and tmux("list-sessions").returncode == 0
+
+
+def cmux_up():
+    return cmux_bin() is not None and cmux("ping").returncode == 0
+
+
+def fail(short_id, reason):
+    """Log why no pane opened, and tell the user, since the pane that ran /fork
+    is usually the one that couldn't be found."""
+    log(f"{short_id}: {reason}")
+    hint = f"Run: claude attach {short_id}"
+    why = LOG.replace(os.path.expanduser("~"), "~")
+    if tmux_up():
+        text = f"Fork {short_id} didn't open in a pane. {hint}  (why: {why})"
+        for client in tmux("list-clients", "-F", "#{client_name}").stdout.split():
+            tmux("display-message", "-c", client, "-d", str(MESSAGE_MS), text)
+    if cmux_up():
+        cmux("notify", "--title", f"Fork {short_id} didn't open in a pane",
+             "--body", f"{hint}. Why: {why}")
+
+
+def registry_entry(session_id):
+    """The session's entry in ~/.claude/sessions/, or {}."""
+    for entry in os.scandir(SESSIONS) if os.path.isdir(SESSIONS) else ():
+        if not entry.name.endswith(".json"):
+            continue
+        try:
+            with open(entry.path) as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if data.get("sessionId") == session_id:
+            return data
+    return {}
+
+
+def not_a_fork(short_id, name, job_id):
+    """Why this session isn't a /fork, or None. SessionStart's source is "fork" for
+    /branch and for moving a conversation to the background too. Only /fork names the
+    session "<parent> ⑂ <prompt>" and starts it in a job of its own; a /branch made
+    in a background session stays in that session's job."""
+    if job_id and job_id != short_id:
+        return f"it runs in job {job_id}, not a job of its own"
+    if name and " ⑂ " not in name:
+        return f"its name {name!r} has no ⑂"
+    return None
+
+
+# A pane is (multiplexer, id, title): ("tmux", "%12", ...) or ("cmux", "surface:7", ...).
+CMUX_SURFACE = re.compile(r'surface (surface:\d+) \[terminal\] "(.*?)"')
+
+
+def panes():
+    found = []
+    if tmux_up():
+        out = tmux("list-panes", "-a", "-F", "#{pane_id}\t#{pane_title}")
+        for line in out.stdout.splitlines():
+            if "\t" in line:
+                pane_id, title = line.split("\t", 1)
+                found.append(("tmux", pane_id, title))
+    if cmux_up():
+        for line in cmux("tree", "--all").stdout.splitlines():
+            m = CMUX_SURFACE.search(line)
+            if m:
+                found.append(("cmux", m.group(1), m.group(2)))
+    return found
+
+
+def screen(pane):
+    kind, pane_id, _ = pane
+    if kind == "tmux":
+        return tmux("capture-pane", "-p", "-J", "-t", pane_id).stdout
+    return cmux("read-screen", "--surface", pane_id).stdout
+
+
+def label(pane):
+    return f"{pane[0]} {pane[1]}"
+
+
+def pane_showing(short_id):
+    line = re.compile(r"session running · .* · " + re.escape(short_id) + r"(?: ·|[ \t]*$)", re.M)
+    return [p for p in panes() if line.search(screen(p))]
+
+
+def pane_titled(parent_name):
+    # Titles carry a leading status glyph, such as "✳ ", before the session name.
+    return [p for p in panes() if re.sub(r"^\W+\s", "", p[2]).strip() == parent_name]
+
+
+def find_pane(session_id, title):
+    short_id = session_id[:8]
+    deadline = time.monotonic() + WAIT_SECONDS
+    while True:
+        found = pane_showing(short_id)
+        if len(found) == 1:
+            return found[0], "screen"
+        if len(found) > 1:
+            fail(short_id, f"{len(found)} panes show its /fork line ({', '.join(map(label, found))}), so none was picked")
+            return None, None
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(POLL_SECONDS)
+    entry = registry_entry(session_id)
+    title = title or entry.get("name")
+    reason = not_a_fork(short_id, title, entry.get("jobId"))
+    if reason:
+        log(f"{short_id}: not a /fork, probably a /branch, so no pane opened: {reason}")
+        return None, None
+    if " ⑂ " in (title or ""):
+        parent = title.rsplit(" ⑂ ", 1)[0]
+        found = pane_titled(parent)
+        if len(found) == 1:
+            return found[0], "title"
+        fail(short_id, f"no pane showed its /fork line, and {len(found)} panes are titled {parent!r}")
+    else:
+        fail(short_id, f"no pane showed its /fork line, and the session name {title!r} names no parent")
+    return None, None
+
+
+def open_beside(session_id, title, cwd):
+    short_id = session_id[:8]
+    pane, how = find_pane(session_id, title)
+    if not pane:
+        return
+    kind, pane_id, _ = pane
+    cwd = cwd or os.path.expanduser("~")
+    if kind == "tmux":
+        # `exec bash` keeps the pane open after `claude attach` exits.
+        out = tmux("split-window", "-h", "-d", "-t", pane_id, "-c", cwd,
+                   "-P", "-F", "#{pane_id}", f"bash -lc 'claude attach {short_id}; exec bash'")
+        if out.returncode == 0:
+            log(f"{short_id}: opened tmux {out.stdout.strip()} beside {pane_id} (matched by {how})")
+        else:
+            fail(short_id, f"tmux split-window beside {pane_id} failed: {out.stderr.strip()}")
+        return
+    # cmux: open a shell beside the surface, then type the command into it, so the
+    # surface stays a shell after `claude attach` exits.
+    out = cmux("new-split", "right", "--surface", pane_id, "--focus", "false")
+    m = re.search(r"surface:\d+", out.stdout)
+    if out.returncode != 0 or not m:
+        fail(short_id, f"cmux new-split beside {pane_id} failed: {(out.stderr or out.stdout).strip()}")
+        return
+    new = m.group(0)
+    quoted_cwd = "'" + cwd.replace("'", "'\\''") + "'"
+    sent = cmux("send", "--surface", new, f"cd {quoted_cwd} && claude attach {short_id}")
+    entered = cmux("send-key", "--surface", new, "enter")
+    if sent.returncode == 0 and entered.returncode == 0:
+        log(f"{short_id}: opened cmux {new} beside {pane_id} (matched by {how})")
+    else:
+        fail(short_id, f"cmux opened {new} but couldn't type into it: {(sent.stderr or entered.stderr).strip()}")
+
+
+def main():
+    data = json.load(sys.stdin)
+    # A fork opened in a terminal (claude --resume --fork-session) is already on screen.
+    if data.get("source") != "fork" or os.environ.get("TMUX_PANE") or os.environ.get("CMUX_SURFACE_ID"):
+        return
+    if not (tmux_up() or cmux_up()):
+        return
+    session_id = data["session_id"]
+    title = data.get("session_title")
+    cwd = data.get("cwd")
+
+    # Detach, and close the inherited stdio, so the hook runner stops waiting now.
+    if os.fork():
+        return
+    os.setsid()
+    if os.fork():
+        os._exit(0)
+    devnull = os.open(os.devnull, os.O_RDWR)
+    for fd in (0, 1, 2):
+        os.dup2(devnull, fd)
+    try:
+        open_beside(session_id, title, cwd)
+    except Exception as e:
+        fail(session_id[:8], f"{type(e).__name__}: {e}")
+    os._exit(0)
+
+
+if __name__ == "__main__":
+    main()
