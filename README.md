@@ -19,6 +19,7 @@ Everything here is deliberately **free of employer, project, and machine specifi
 | `claude--working-with-git.md` | on demand |
 | `claude--working-with-tmux.md` | on demand |
 | `scripts/cmux-snapshot.sh` | not loaded; run by hand, as `claude--working-with-tmux.md` describes |
+| `scripts/tmux-open-fork-pane` | by a `SessionStart` hook you add; its header has the hook. Opens a `/fork` session in a pane beside the one that ran it, in tmux or cmux. |
 | `skills/` | per Claude Code's skill discovery, once installed. See "Skills" below. |
 
 ## Always-loaded vs on-demand
@@ -59,6 +60,7 @@ Prefer `~/.claude/CLAUDE.md` over `~/CLAUDE.md` in your home directory. The form
 | [`linking-to-code`](skills/linking-to-code) | Formats durable GitHub links to files, lines, directories, diffs, and lines inside a PR, for Markdown, Slack, and plain text. Its `gh-link` script builds the URLs without calling GitHub. |
 | [`dump-slack-threads`](skills/dump-slack-threads) | Copies a Slack conversation word for word into a Markdown file, with each thread's replies nested under its parent. Uses the Slack connector. |
 | [`track-slack-thread`](skills/track-slack-thread) | Keeps that copy current in a file on a local git branch, committing only when the conversation changed, optionally on a schedule. Builds on `dump-slack-threads`. |
+| [`tmux-synthesize`](skills/tmux-synthesize) | Asks the Claude sessions in your tmux or cmux panes for status reports, tracks who has reported, then checks and combines the reports into one summary of overlaps, conflicts, and decisions. Has an incremental mode. |
 | [`sitrep`](skills/sitrep) | Prints a situation report: time, git state, PR, branch stack, tasks, and sub-agents. Run it as `/sitrep`. |
 
 To install one, link its directory into your user skills directory:
