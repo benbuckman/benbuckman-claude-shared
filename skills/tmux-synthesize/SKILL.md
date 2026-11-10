@@ -46,9 +46,21 @@ Map each pane to a session:
 - **An interactive session in cmux** has `tmux: null`. Map it through its surface's tty, as above.
 - **A pane whose command is `bash`** may run `claude attach <jobId>`. That pane shows the bg session whose `.json` has that `jobId`.
 - **An interactive process with `parkedJobId`** shows that bg job in its pane. The parked process itself isn't in `ListAgents` and has a stale name. Address the bg session, never the parked process.
+- **A pane whose command is `claude agents`** is Claude Code's view of background sessions, and it shows one bg session at a time. Its process has no `.json` of its own, so match the pane's title to the bg session's `name`. For example, a tmux pane titled `Query time by role` ran `claude agents` and showed the bg session of that name, whose `.json` had `tmux: null`. This was seen in tmux. It hasn't been checked in cmux.
 - **A bg session that no pane attaches to** is truly in the background. Leave it out unless the user asks for it, and mention it.
 
 Leave the caller out of the list. Step 4 decides whether the caller reports.
+
+**Check that each session is still running before offering it or messaging it.** A session counts as running only when all three hold:
+
+- **Its pane or surface still exists.**
+  - In tmux, the pane is still in `tmux list-panes -a`.
+  - In cmux, the surface is still in `cmux tree --all`, and `ps -t <tty>` still shows the session's `claude` process on the surface's tty.
+  - For a bg session, a pane's process tree still runs `claude attach <jobId>`, holds `parkedJobId: <jobId>`, or runs `claude agents` under a title that matches the session's name.
+- **Its process is alive:** `kill -0 <pid>` succeeds for the pid in its `.json`.
+- **`ListAgents` still lists it.**
+
+Drop a session that fails any of these. Never send a message to it. List it in the synthesis as ended. A `.json` file can outlive its process, so the file alone proves nothing. Run the check again right before each batch of messages, such as a pause, a resume, or the report requests, because panes close between steps.
 
 ## 2. Let the user select
 
@@ -97,6 +109,7 @@ Each message contains:
   5. Remaining
   6. Open questions or decisions waiting on the user, each with an owner
   7. Overlaps or conflicts with other sessions' work
+  8. Where it stands: one of **waiting on the user** (it can't go further without their decision or action), **has pending work** (it can go on without them, and says what that work is), or **effectively done** (nothing left that isn't someone else's), with one sentence of why
 - **Lineage:**
   - Don't report a parent's work as your own. Assume the parent writes its own report.
   - Name each child (a branch, fork, or spawned session) and summarize what you know it did in a sentence or two. The child reports its own details.
@@ -139,11 +152,12 @@ A self-report can be wrong. In the worked example, two sessions said they had un
 
 Write `SYNTHESIS.md` in the run folder, then print it. It contains:
 
-1. **Session map:** a lineage tree with each session's pane and short session ID, and the sessions that aren't in this round
-2. **Workstreams:** one entry per line of work, a few sentences each
-3. **Overlaps and conflicts:** shared files, shared sheets or pages, and contradictory claims, each marked **[verified]** or left as reported
-4. **Waiting on the user:** decisions from every report, deduplicated and grouped, each with an owner
-5. **Housekeeping with no owner:** loose ends that no session claims
+1. **Where each session stands:** a table that puts every session in one of three groups, waiting on the user, has pending work, or effectively done, with the one thing that would move it. Take each session's own answer from section 8, and correct it where the verification in step 7 disagrees. An "effectively done" session is a candidate for the user to close.
+2. **Session map:** a lineage tree with each session's pane and short session ID, and the sessions that aren't in this round
+3. **Workstreams:** one entry per line of work, a few sentences each
+4. **Overlaps and conflicts:** shared files, shared sheets or pages, and contradictory claims, each marked **[verified]** or left as reported
+5. **Waiting on the user:** decisions from every report, deduplicated and grouped, each with an owner
+6. **Housekeeping with no owner:** loose ends that no session claims
 
 Then offer, in one line, to publish the synthesis as an artifact.
 
@@ -187,6 +201,7 @@ Sections:
 5. **Remaining:** the full current list, not only the changes, with each item marked *new*, *carried over*, or *done* compared with the previous report. Leave the done ones in, marked, so the caller can retire them.
 6. **Open questions:** the full current list, marked the same way, plus any decisions the user made since the cutoff, quoted where possible
 7. **Overlaps or conflicts:** new ones, and previous ones that are now resolved
+8. **Where it stands:** waiting on the user, has pending work, or effectively done, as in step 5
 
 Sections 5 and 6 list the full current state. That way the synthesis can stand on its own, without stitching deltas onto the previous one.
 
@@ -204,7 +219,7 @@ Check the commits since each cutoff, by session ID where the repo records one, a
 - **New:** new work, conflicts, and questions
 - **Still open:** carried over, with how long each has been open
 
-Then the five full sections, as in step 8, updated. Housekeeping items that had no owner in the previous synthesis carry forward until someone does them.
+Then the six full sections, as in step 8, updated. Housekeeping items that had no owner in the previous synthesis carry forward until someone does them.
 
 ## Pitfalls
 
