@@ -43,7 +43,7 @@ Imports inside this repo are relative, and Claude Code resolves a relative impor
 Two limits worth knowing:
 
 - **Imports nest four deep at most.** The manifest is one hop from your file and its imports are two, leaving room for one more level in your own config.
-- **Target under 200 lines per file.** Adherence drops as files grow. The always-loaded set here is about 115 lines including the manifest.
+- **Target under 200 lines per file.** Adherence drops as files grow. The always-loaded set here is about 160 lines including the manifest.
 
 Prefer `~/.claude/CLAUDE.md` over `~/CLAUDE.md` in your home directory. The former is a documented user-scope location whose imports load without an approval prompt, regardless of your working directory. The latter is picked up only because Claude Code walks up the directory tree, which makes it conditional on where you started.
 
