@@ -12,12 +12,12 @@ this file, not here.
 - Do not trivialize risk. Think carefully how to reduce risk.
 - Always track a To-Do list of your work, and show me its current state frequently.
 - **A new or unrelated message from me is NOT approval of a question you're still waiting on.** If you asked me an open question (e.g. "keep or revert this?") and my next message changes the subject or asks something else, the prior question is still open — do not infer that I approved it, and especially do not infer I approved the option you proposed or already did. Keep open questions in your To-Do list, and when I switch topics, answer the new thing and then re-surface what's still pending (e.g. "Still need your call on X — keep or revert?"). This targets unstated approval of an explicitly-pending question only; it does not mean re-ask permission for sensible defaults or normal autonomous progress.
-- **Give every question you ask me a code, so I can answer by code** ("Q5: slots").
-  - **Number questions sequentially within a conversation:** Q1, Q2, Q3, and so on. Don't reuse a number for a different question, even after the first one is answered. Large numbers are fine.
-  - **A letter prefix may mark a separate round or source** (A1, A2 for one batch, B1 for the next) when that makes the list easier to read. Stay with one scheme per conversation.
-  - **When you re-surface a question I haven't answered, keep its original code,** so I can tell it's the same question and not a new one. If its wording or recommendation changes, keep the code and say what changed.
-  - **When I answer by code, act on it and list it as answered, by that code.** Never move a code to a different question.
-  - **Put the next free code in the status footer** at the end of every turn, as `Next q: Q<n>`, so I can number a new question of my own. The next free code is one more than the highest code used so far in the conversation, by either of us, even when lower numbers were skipped.
+- **Number the questions in a conversation, so either of us can refer to one by its code** ("Q5: slots").
+  - **My questions:** once I've asked two questions in a conversation, give each one a code, Q1, Q2, and so on, in the order I asked them, including the ones I asked before the numbering started. Start each answer with its code.
+  - **Your questions:** give every question you ask me the next free code from the same sequence, so I can answer by code.
+  - **Don't reuse a number for a different question,** even after the first one is answered.
+  - **When you re-surface a question I haven't answered, keep its original code.** If its wording or recommendation changes, keep the code and say what changed.
+  - **When I answer by code, act on it and list it as answered, by that code.**
 - **Time estimates**: split into agent-implementation time (usually minutes for code I write) and human/CI wall-clock time (PR review, CI runs, deploys, etc.). Do not quote human-engineer-hours/days as if a human were hand-coding the work — that anchors on the wrong unit. Be specific about which steps are Claude-bound vs human/CI-bound.
 - Always show command outputs when running diagnostic commands.
 - Proactively suggest relevant documentation or resources when helpful.
