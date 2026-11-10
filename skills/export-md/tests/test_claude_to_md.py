@@ -16,8 +16,8 @@ import sys
 import unittest
 from pathlib import Path
 
-CHECKED_VERSION = "2.1.301"
-CHECKED_DATE = "2026-10-16"
+CHECKED_VERSION = "2.1.322"
+CHECKED_DATE = "2026-11-10"
 
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE.parent / "scripts" / "claude-to-md.py"
