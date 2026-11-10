@@ -4,9 +4,11 @@
 # Set SITREP_TZ (for example, America/Chicago) to print the time in a zone other
 # than the machine's local one.
 #
-# The "Stack" section comes from git-spice's `gs ls`, its short log. It is
-# skipped when git-spice isn't installed, or isn't set up in the current repo.
-# `gs ls` may still prune stale git-spice tracking data as a side effect.
+# The "Stack" section comes from `gh stack view --short`, from GitHub's gh-stack
+# extension (`gh extension install github/gh-stack`). Outside a stack, the
+# command exits with status 2 and prints nothing. Inside one, it refreshes the
+# cached pull request state in the existing stack file, and creates no stack.
+# Without the extension, the section says that gh stack is unavailable.
 #
 # SPDX-License-Identifier: MIT
 
@@ -39,14 +41,14 @@ fi
 # Branch stack
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
   stack="(not in a git repo)"
-elif ! command -v gs >/dev/null 2>&1; then
-  stack="(git-spice not installed)"
-elif ! git show-ref --verify --quiet refs/spice/data; then
-  # `gs ls` sets git-spice up in a repo that doesn't use it yet, which writes
-  # refs/spice/data. A report shouldn't change the repo, so skip it.
-  stack="(git-spice not set up in this repo)"
 else
-  stack=$(gs ls 2>&1 || true)
+  stack_rc=0
+  stack=$(gh stack view --short 2>/dev/null) || stack_rc=$?
+  case $stack_rc in
+    0) ;;
+    2) stack="(not in a stack)" ;;
+    *) stack="(gh stack unavailable)" ;;
+  esac
 fi
 
 # Print
