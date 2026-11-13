@@ -1,6 +1,6 @@
 ---
-name: dump-slack-threads
-description: Copy a Slack conversation verbatim into a Markdown file, with each thread's replies nested under its parent. Use when the user says "/dump-slack-threads", "dump this Slack thread/conversation/channel to a file", "save this Slack conversation", or "export this DM to markdown". It copies text and does not summarize.
+name: slack-dump-threads
+description: Copy a Slack conversation verbatim into a Markdown file, with each thread's replies nested under its parent. Use when the user says "/slack-dump-threads", "dump this Slack thread/conversation/channel to a file", "save this Slack conversation", or "export this DM to markdown". It copies text and does not summarize.
 argument-hint: "<channel ID or Slack URL> [output path] [since=YYYY-MM-DD] [until=YYYY-MM-DD] [max=N]"
 user-invocable: true
 ---
@@ -48,7 +48,7 @@ Parse `$ARGUMENTS`. Ask only for what is missing and cannot be defaulted.
 - **Conversation:** [<id>](https://<workspace>.slack.com/archives/<id>), <public channel, private channel, DM, or group DM>
 - **Range:** <date of the first post copied> to <date of the last post copied>
 - **Posts:** <total> (<top-level> top-level, <replies> replies in <threads> threads)
-- **Copied:** <YYYY-MM-DD HH:MM TZ> by Claude, through the Slack MCP, with the dump-slack-threads skill
+- **Copied:** <YYYY-MM-DD HH:MM TZ> by Claude, through the Slack MCP, with the slack-dump-threads skill
 - **Cut off:** <only when a limit stopped the dump: which limit, and what was left out>
 
 Message text is copied verbatim. Mentions are shown as @Name, links are converted to Markdown, and email addresses are left out. Reactions show counts, not who reacted.

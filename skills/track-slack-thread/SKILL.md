@@ -1,19 +1,19 @@
 ---
 name: track-slack-thread
-description: Keep a Markdown copy of a Slack conversation up to date in a file on a local git branch. On each check it copies the conversation with dump-slack-threads, and only when the conversation changed it commits the file in the checkout of that branch and tells the user, here and optionally by push notification. With every=<interval> it schedules the checks. Use when the user says "/track-slack-thread", "track this Slack conversation in the repo", "keep this Slack copy up to date", or "monitor this conversation and commit changes". For a one-time copy, use dump-slack-threads instead.
+description: Keep a Markdown copy of a Slack conversation up to date in a file on a local git branch. On each check it copies the conversation with slack-dump-threads, and only when the conversation changed it commits the file in the checkout of that branch and tells the user, here and optionally by push notification. With every=<interval> it schedules the checks. Use when the user says "/track-slack-thread", "track this Slack conversation in the repo", "keep this Slack copy up to date", or "monitor this conversation and commit changes". For a one-time copy, use slack-dump-threads instead.
 argument-hint: "<channel ID or Slack URL> <file path> <branch> [every=<interval>] [since=YYYY-MM-DD] [until=YYYY-MM-DD] [max=N]"
 user-invocable: true
 ---
 
 # Track a Slack conversation in a file on a branch
 
-Keep one Markdown copy of a Slack conversation current, in a file on a local branch. Each check copies the whole conversation to a temp folder, compares it with the committed copy, and commits only when the conversation itself changed. Read [dump-slack-threads](../dump-slack-threads/SKILL.md) first: this skill uses its inputs, its file format, and its checks.
+Keep one Markdown copy of a Slack conversation current, in a file on a local branch. Each check copies the whole conversation to a temp folder, compares it with the committed copy, and commits only when the conversation itself changed. Read [slack-dump-threads](../slack-dump-threads/SKILL.md) first: this skill uses its inputs, its file format, and its checks.
 
 ## Inputs
 
 Parse `$ARGUMENTS`. Ask only for what is missing.
 
-- **Target, `since=`, `until=`, `max=`:** the same as dump-slack-threads. The target's URL becomes the copy's Source line.
+- **Target, `since=`, `until=`, `max=`:** the same as slack-dump-threads. The target's URL becomes the copy's Source line.
 - **File path, required:** the copy's path relative to the repository root, for example `docs/sources/slack-<name>.md`
 - **Branch, required:** the local branch whose checkout holds the file
 - **`every=<interval>`, optional:** how often to check. With it, set up a scheduled job and run the first check. Without it, run one check and stop. There is no default interval: if the user asks for tracking without saying how often, ask.
@@ -39,7 +39,7 @@ Parse `$ARGUMENTS`. Ask only for what is missing.
 1. **Find the checkout:** run `git worktree list --porcelain` in the repository, and take the `worktree` path of the entry whose `branch` line is `refs/heads/<branch>`. Call it W.
    - **No entry has the branch:** reply in one line that the branch is not checked out in any local worktree, and stop.
    - **This session is isolated to a different worktree:** its git commands can't reach W, so tell the user and stop.
-2. **Copy the conversation to a temp folder:** write `/tmp/track-slack-thread/<file name>`, following dump-slack-threads, including its checks. For each post whose text in Slack matches W's copy, write it exactly as W's copy has it, so that formatting alone never shows up as a change.
+2. **Copy the conversation to a temp folder:** write `/tmp/track-slack-thread/<file name>`, following slack-dump-threads, including its checks. For each post whose text in Slack matches W's copy, write it exactly as W's copy has it, so that formatting alone never shows up as a change.
 3. **Make sure the comparison can work:** W's copy, if it exists, and the temp copy must each have exactly one line that starts with `- **Copied:**`. Without that line, the next step's `sed` deletes the whole file, both sides come out empty, and the check would always find no change. If W's copy lacks it, stop and tell the user.
 4. **Compare everything below the Copied line:**
 

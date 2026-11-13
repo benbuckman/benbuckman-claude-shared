@@ -58,8 +58,8 @@ Prefer `~/.claude/CLAUDE.md` over `~/CLAUDE.md` in your home directory. The form
 | [`export-md`](skills/export-md) | Exports the current conversation to Markdown or Slack-formatted text, from its transcript. Run it as `/export-md`. Its parser has a smoke test for Claude Code format changes. |
 | [`find-past-conversations`](skills/find-past-conversations) | Searches the text of past Claude Code sessions, names each match with its title and fork parent, and gives the command to resume it. Needs `export-md` installed next to it. |
 | [`linking-to-code`](skills/linking-to-code) | Formats durable GitHub links to files, lines, directories, diffs, and lines inside a PR, for Markdown, Slack, and plain text. Its `gh-link` script builds the URLs without calling GitHub. |
-| [`dump-slack-threads`](skills/dump-slack-threads) | Copies a Slack conversation word for word into a Markdown file, with each thread's replies nested under its parent. Uses the Slack connector. |
-| [`track-slack-thread`](skills/track-slack-thread) | Keeps that copy current in a file on a local git branch, committing only when the conversation changed, optionally on a schedule. Builds on `dump-slack-threads`. |
+| [`slack-dump-threads`](skills/slack-dump-threads) | Copies a Slack conversation word for word into a Markdown file, with each thread's replies nested under its parent. Uses the Slack connector. |
+| [`track-slack-thread`](skills/track-slack-thread) | Keeps that copy current in a file on a local git branch, committing only when the conversation changed, optionally on a schedule. Builds on `slack-dump-threads`. |
 | [`tmux-synthesize`](skills/tmux-synthesize) | Asks the Claude sessions in your tmux or cmux panes for status reports, tracks who has reported, then checks and combines the reports into one summary of overlaps, conflicts, and decisions. Has an incremental mode. |
 | [`sitrep`](skills/sitrep) | Prints a situation report: time, git state, PR, branch stack, tasks, and sub-agents. Run it as `/sitrep`. |
 
